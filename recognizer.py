@@ -417,7 +417,8 @@ def prompt_for_known_filled_cells(occupied, recognition):
 
 def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
     """
-    Rebuilt board üzerinde tanınan değerler maviyle işaretlenir.
+    Rebuilt board'un sağ sütununda tanınan hücrelere yarı saydam mavi perde gelir.
+    Rakam metni siyah kalır; renk sadece arka plan dokuya uygulanır.
     """
 
     result = cv2.cvtColor(
@@ -445,15 +446,15 @@ def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
                 overlay,
                 (x1, y1),
                 (x2, y2),
-                (255, 120, 60),
+                (255, 0, 0),
                 -1,
             )
 
     result = cv2.addWeighted(
         overlay,
-        0.24,
+        0.30,
         result,
-        0.76,
+        0.70,
         0,
     )
 
@@ -462,11 +463,8 @@ def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
 
 def create_recognition_result(rebuilt, recognition, occupied):
     """
-    Düz rebuilt tabanında iki katmanlı sonuç paneli üretir:
-      - tanınan değerler: mavi
-      - dolu ama tanınamayanlar: sarı
-      - yanlış/karışık çıkanlar: kırmızı
-      - boş hücreler: boş
+    Renk, sayı metninin kendisinde değil hücre arka planında kullanılır.
+    Bu yüzden tüm rakamlar siyah yazılır; arka plan sadece perde gibi renklendirir.
     """
 
     result = cv2.cvtColor(
@@ -495,7 +493,7 @@ def create_recognition_result(rebuilt, recognition, occupied):
                     overlay,
                     (x1, y1),
                     (x2, y2),
-                    (0, 220, 220),
+                    (0, 255, 255),
                     -1,
                 )
                 continue
@@ -505,7 +503,7 @@ def create_recognition_result(rebuilt, recognition, occupied):
                     overlay,
                     (x1, y1),
                     (x2, y2),
-                    (0, 0, 220),
+                    (0, 0, 255),
                     -1,
                 )
                 continue
@@ -515,15 +513,15 @@ def create_recognition_result(rebuilt, recognition, occupied):
                     overlay,
                     (x1, y1),
                     (x2, y2),
-                    (255, 120, 60),
+                    (255, 0, 0),
                     -1,
                 )
 
     result = cv2.addWeighted(
         overlay,
-        0.28,
+        0.30,
         result,
-        0.72,
+        0.70,
         0,
     )
 
@@ -540,24 +538,15 @@ def create_recognition_result(rebuilt, recognition, occupied):
 
             cx = int((x1 + x2) / 2.0)
             cy = int((y1 + y2) / 2.0)
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            scale = 0.8
-            thickness = 2
-            color = (255, 255, 255)
-
-            if occupied[row][col] == 1:
-                color = (255, 255, 255)
-            else:
-                color = (255, 255, 255)
 
             cv2.putText(
                 result,
                 str(value),
-                (cx - 10, cy + 12),
-                font,
-                scale,
-                color,
-                thickness,
+                (cx - 11, cy + 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.78,
+                (0, 0, 0),
+                2,
                 cv2.LINE_AA,
             )
 
