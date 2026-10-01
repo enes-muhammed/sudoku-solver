@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 
 
-INTERVAL = 300  # 5 dakika
+INTERVAL = 120  # 5 dakika
 
 
 def run_git(*args):

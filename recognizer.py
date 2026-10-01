@@ -461,10 +461,14 @@ def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
     return result
 
 
-def create_recognition_result(rebuilt, recognition, occupied):
+def create_recognition_result(rebuilt, recognition, occupied, known_values):
     """
-    Renk, sayı metninin kendisinde değil hücre arka planında kullanılır.
-    Bu yüzden tüm rakamlar siyah yazılır; arka plan sadece perde gibi renklendirir.
+    Son sonuç paneli:
+      - eşleşen tahminler: yeşil
+      - yanlış tahminler: kırmızı
+      - dolu ama tanınamayan: sarı
+      - rakam bilinen / guess: mavi
+    Metin siyah kalır; renk sadece hücre arka planına uygulanır.
     """
 
     result = cv2.cvtColor(
@@ -486,29 +490,43 @@ def create_recognition_result(rebuilt, recognition, occupied):
             y2 = round((row + 1) * cell_height)
 
             value = recognition[row][col]
+            known = known_values[row][col]
             is_occupied = occupied[row][col] == 1
 
-            if is_occupied and value == 0:
+            if known != 0:
+                if value == known:
+                    cv2.rectangle(
+                        overlay,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 255, 0),
+                        -1,
+                    )
+                elif value == 0:
+                    cv2.rectangle(
+                        overlay,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 255, 255),
+                        -1,
+                    )
+                else:
+                    cv2.rectangle(
+                        overlay,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 0, 255),
+                        -1,
+                    )
+            elif value != 0 and is_occupied:
                 cv2.rectangle(
                     overlay,
                     (x1, y1),
                     (x2, y2),
-                    (0, 255, 255),
+                    (255, 0, 0),
                     -1,
                 )
-                continue
-
-            if not is_occupied and value != 0:
-                cv2.rectangle(
-                    overlay,
-                    (x1, y1),
-                    (x2, y2),
-                    (0, 0, 255),
-                    -1,
-                )
-                continue
-
-            if is_occupied and value != 0:
+            elif value != 0:
                 cv2.rectangle(
                     overlay,
                     (x1, y1),
@@ -519,9 +537,9 @@ def create_recognition_result(rebuilt, recognition, occupied):
 
     result = cv2.addWeighted(
         overlay,
-        0.30,
+        0.32,
         result,
-        0.70,
+        0.68,
         0,
     )
 

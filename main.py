@@ -2,6 +2,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import tkinter as tk
+from tkinter import simpledialog
 from PIL import Image, ImageTk
 from board import (
     OUTPUT_SIZE,
@@ -1206,7 +1207,7 @@ class SudokuViewer:
 
         self.image_labels = []
 
-        for _ in range(5):
+        for _ in range(3):
 
             label = tk.Label(
                 self.image_frame,
@@ -1223,6 +1224,73 @@ class SudokuViewer:
             self.image_labels.append(
                 label
             )
+
+        self.right_column = tk.Frame(
+            self.image_frame,
+            bg="#111111",
+        )
+
+        self.right_column.pack(
+            side="left",
+            fill="both",
+            expand=True,
+            padx=5,
+        )
+
+        self.rebuilt_panel = tk.Frame(
+            self.right_column,
+            bg="#222222",
+        )
+
+        self.rebuilt_panel.pack(
+            fill="both",
+            expand=True,
+        )
+
+        self.rebuilt_label = tk.Label(
+            self.rebuilt_panel,
+            bg="#222222",
+            fg="white",
+            font=(
+                "Arial",
+                10,
+                "bold",
+            ),
+            compound="bottom",
+        )
+
+        self.rebuilt_label.pack(
+            fill="both",
+            expand=True,
+        )
+
+        self.recognition_panel = tk.Frame(
+            self.right_column,
+            bg="#222222",
+        )
+
+        self.recognition_panel.pack(
+            fill="both",
+            expand=True,
+            pady=(8, 0),
+        )
+
+        self.recognition_label = tk.Label(
+            self.recognition_panel,
+            bg="#222222",
+            fg="white",
+            font=(
+                "Arial",
+                10,
+                "bold",
+            ),
+            compound="bottom",
+        )
+
+        self.recognition_label.pack(
+            fill="both",
+            expand=True,
+        )
 
         self.button_frame = tk.Frame(
             self.root,
@@ -1363,32 +1431,9 @@ class SudokuViewer:
             ("Original", result["original"]),
             ("Warp 1", result["warped"]),
             ("Grid Debug", result["grid_debug"]),
-            ("Recognition Result", result["recognition_result"]),
-            ("Rebuilt", result["rebuilt"]),
         ]
-
-        names = [
-            "Original",
-            "Warp 1",
-            "Grid Debug",
-            "Recognition Result",
-            "Rebuilt",
-        ]
-
-        self.title_label.config(
-            text=result["name"]
-        )
-
-        self.counter_label.config(
-            text=(
-                f"{self.index + 1}"
-                f" / "
-                f"{len(self.results)}"
-            )
-        )
 
         for i, (name, image) in enumerate(images):
-
             tk_image = self.cv_to_tk(
                 image
             )
@@ -1408,6 +1453,54 @@ class SudokuViewer:
             self.image_labels[i].image = (
                 tk_image
             )
+
+        rebuilt_image = self.cv_to_tk(
+            result["rebuilt"]
+        )
+
+        self.rebuilt_label.config(
+            image=rebuilt_image,
+            text="Rebuilt",
+            compound="bottom",
+            fg="white",
+            font=(
+                "Arial",
+                10,
+                "bold",
+            ),
+        )
+
+        self.rebuilt_label.image = rebuilt_image
+
+        recognition_image = self.cv_to_tk(
+            result["recognition_result"]
+        )
+
+        self.recognition_label.config(
+            image=recognition_image,
+            text="Recognition Result",
+            compound="bottom",
+            fg="white",
+            font=(
+                "Arial",
+                10,
+                "bold",
+            ),
+        )
+
+        self.recognition_label.image = recognition_image
+
+        self.title_label.config(
+            text=result["name"]
+        )
+
+        self.counter_label.config(
+            text=(
+                f"{self.index + 1}"
+                f" / "
+                f"{len(self.results)}"
+            )
+        )
 
         self.previous_button.config(
             state=(
@@ -1595,10 +1688,32 @@ def process_image(
         cell_images
     )
 
-    recognition = prompt_for_known_filled_cells(
-        occupied,
-        recognition,
-    )
+    known_values = [[0 for _ in range(9)] for _ in range(9)]
+
+    for row in range(9):
+        for col in range(9):
+            if occupied[row][col] == 1 and recognition[row][col] == 0:
+                root = tk.Tk()
+                root.withdraw()
+                try:
+                    value = simpledialog.askinteger(
+                        "Known filled cell",
+                        f"Cell [{row},{col}] is filled. Enter value (1-9) or 0 to skip:",
+                        parent=root,
+                        minvalue=0,
+                        maxvalue=9,
+                    )
+                finally:
+                    root.destroy()
+
+                if value is None:
+                    value = 0
+
+                if 1 <= value <= 9:
+                    recognition[row][col] = value
+                    known_values[row][col] = value
+                else:
+                    known_values[row][col] = 0
 
     print(
         "    Recognition grid:"
@@ -1627,6 +1742,7 @@ def process_image(
         rebuilt,
         recognition,
         occupied,
+        known_values,
     )
 
     return {
@@ -1640,6 +1756,7 @@ def process_image(
         "cell_images": cell_images,
         "recognition": recognition,
         "occupied": occupied,
+        "known_values": known_values,
         "normalized_digits": normalized_digits,
     }
 
