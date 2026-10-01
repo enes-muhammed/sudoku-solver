@@ -1690,11 +1690,19 @@ def process_image(
 
     known_values = [[0 for _ in range(9)] for _ in range(9)]
 
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+    except tk.TclError:
+        root = None
+
     for row in range(9):
         for col in range(9):
             if occupied[row][col] == 1 and recognition[row][col] == 0:
-                root = tk.Tk()
-                root.withdraw()
+                if root is None:
+                    break
+
                 try:
                     value = simpledialog.askinteger(
                         "Known filled cell",
@@ -1703,8 +1711,8 @@ def process_image(
                         minvalue=0,
                         maxvalue=9,
                     )
-                finally:
-                    root.destroy()
+                except tk.TclError:
+                    break
 
                 if value is None:
                     value = 0
@@ -1714,6 +1722,9 @@ def process_image(
                     known_values[row][col] = value
                 else:
                     known_values[row][col] = 0
+
+    if root is not None:
+        root.destroy()
 
     print(
         "    Recognition grid:"
