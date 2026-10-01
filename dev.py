@@ -4,9 +4,9 @@ import subprocess
 import sys
 
 
-def run_git(*args):
+def run_command(command):
     result = subprocess.run(
-        ["git", *args],
+        command,
         capture_output=True,
         text=True
     )
@@ -20,28 +20,31 @@ def run_git(*args):
     return result
 
 
+def run_git(*args):
+    return run_command(["git", *args])
+
+
 def detect_environment():
     system = platform.system()
 
-    print("\n[ENVIRONMENT]")
+    print("[ENVIRONMENT]")
     print(f"Operating system : {system}")
     print(f"Platform         : {platform.platform()}")
     print(f"Python           : {platform.python_version()}")
 
     if system == "Windows":
-        print("Environment      : Windows PC")
+        print("Environment      : Windows")
 
     elif system == "Linux":
-        print("Environment      : Linux PC")
-        
-        # Arch Linux kontrolü
+        print("Environment      : Linux")
+
         if shutil.which("pacman"):
             print("Distribution     : Arch-based Linux")
         else:
             print("Distribution     : Unknown Linux")
 
     else:
-        print(f"Environment      : Unsupported ({system})")
+        print(f"Unsupported platform: {system}")
         sys.exit(1)
 
     print()
@@ -52,7 +55,6 @@ def check_git():
 
     if shutil.which("git") is None:
         print("Git bulunamadı.")
-        print("Önce Git kurulmalı.")
         sys.exit(1)
 
     result = run_git("--version")
@@ -65,30 +67,21 @@ def check_git():
 
 
 def get_git_status():
-    result = subprocess.run(
-        ["git", "status", "--porcelain"],
-        capture_output=True,
-        text=True
-    )
+    result = run_git("status", "--porcelain")
 
     if result.returncode != 0:
-        print("Git repository durumu okunamadı.")
+        print("Git status alınamadı.")
         sys.exit(1)
 
     return result.stdout.strip()
 
 
 def get_sync_status():
-    result = subprocess.run(
-        [
-            "git",
-            "rev-list",
-            "--left-right",
-            "--count",
-            "HEAD...origin/main"
-        ],
-        capture_output=True,
-        text=True
+    result = run_git(
+        "rev-list",
+        "--left-right",
+        "--count",
+        "HEAD...origin/main"
     )
 
     if result.returncode != 0:
@@ -100,100 +93,136 @@ def get_sync_status():
     return ahead, behind
 
 
-def main():
-    print("=" * 60)
-    print("       SUDOKU SOLVER - DEVELOPMENT START")
-    print("=" * 60)
-
-    # ---------------------------------------------------------
-    # 1. ENVIRONMENT
-    # ---------------------------------------------------------
-
-    detect_environment()
-
-    # ---------------------------------------------------------
-    # 2. GIT
-    # ---------------------------------------------------------
-
-    check_git()
-
-    print("[1/4] Git çalışma durumu kontrol ediliyor...\n")
-
-    status = get_git_status()
-
-    if status:
-        print("Yerel değişiklikler var:")
-        print(status)
-    else:
-        print("Yerel çalışma alanı temiz.")
-
-    # ---------------------------------------------------------
-    # 3. GITHUB
-    # ---------------------------------------------------------
-
-    print("\n[2/4] GitHub kontrol ediliyor...\n")
+def sync_git(status):
+    print("[GIT] GitHub kontrol ediliyor...\n")
 
     fetch = run_git("fetch", "origin")
 
     if fetch.returncode != 0:
-        print("\nGitHub'a ulaşılamadı.")
-        print("İnternet bağlantısını veya remote ayarlarını kontrol et.")
+        print("GitHub'a ulaşılamadı.")
         sys.exit(1)
 
     ahead, behind = get_sync_status()
 
-    print(f"\nLocal yeni commitler : {ahead}")
+    print(f"Local yeni commitler : {ahead}")
     print(f"GitHub yeni commitler: {behind}")
-
-    # ---------------------------------------------------------
-    # 4. SYNC
-    # ---------------------------------------------------------
 
     if behind > 0 and ahead == 0:
 
-        print("\nGitHub'da daha yeni bir sürüm var.")
-
         if status:
-            print("\n⚠ Yerel olarak kaydedilmemiş değişikliklerin var.")
+            print("\n⚠ Yerel değişiklikler var.")
             print("Otomatik pull yapılmayacak.")
             print("Önce değişikliklerini commit veya stash et.")
             sys.exit(1)
 
-        print("Son sürüm çekiliyor...\n")
+        print("\nGitHub'daki yeni sürüm çekiliyor...\n")
 
         pull = run_git("pull", "--ff-only")
 
         if pull.returncode != 0:
-            print("\nPull başarısız oldu.")
-            print("Hiçbir merge işlemi otomatik yapılmadı.")
+            print("Pull başarısız oldu.")
             sys.exit(1)
 
-        print("\nGitHub sürümü başarıyla alındı.")
+        print("✓ GitHub sürümü alındı.")
 
     elif behind > 0 and ahead > 0:
 
-        print("\n⚠ LOCAL VE GITHUB AYRILMIŞ DURUMDA")
-        print()
-        print("Local tarafında yeni commitler:")
-        print(f"    {ahead}")
-        print("GitHub tarafında yeni commitler:")
-        print(f"    {behind}")
-        print()
+        print("\n⚠ Local ve GitHub birbirinden ayrılmış.")
         print("Otomatik işlem yapılmadı.")
-        print("Bu durumu manuel çözmemiz gerekiyor.")
         sys.exit(1)
 
     elif ahead > 0:
 
         print("\nLocal'de GitHub'a gönderilmemiş commitler var.")
-        print(f"Bekleyen commit: {ahead}")
-        print("Şimdilik otomatik push yapılmadı.")
+        print("Push işlemini autogit.py halledebilir.")
 
     else:
 
-        print("\nGitHub ile tamamen güncelsin.")
+        print("\n✓ GitHub ile güncelsin.")
 
-    print("\n[4/4] Development ortamı hazır.")
+    print()
+
+
+def install_requirements():
+    print("[PYTHON] Bağımlılıklar kontrol ediliyor...\n")
+
+    try:
+        with open("requirements.txt", "r", encoding="utf-8") as file:
+            requirements = [
+                line.strip()
+                for line in file
+                if line.strip() and not line.startswith("#")
+            ]
+    except FileNotFoundError:
+        print("requirements.txt bulunamadı.")
+        print("Bağımlılık kurulumu atlandı.")
+        return
+
+    if not requirements:
+        print("requirements.txt boş.")
+        return
+
+    print("Gerekli paketler:")
+    for package in requirements:
+        print(f"  - {package}")
+
+    print("\nPip çalıştırılıyor...\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements.txt"
+        ]
+    )
+
+    if result.returncode != 0:
+        print("\n❌ Paket kurulumu başarısız.")
+        sys.exit(1)
+
+    print("\n✓ Python bağımlılıkları hazır.")
+
+
+def main():
+    print("=" * 60)
+    print("       SUDOKU SOLVER - DEVELOPMENT START")
+    print("=" * 60)
+    print()
+
+    # 1
+    detect_environment()
+
+    # 2
+    check_git()
+
+    # 3
+    print("[1/3] Git çalışma durumu kontrol ediliyor...\n")
+
+    status = get_git_status()
+
+    if status:
+        print("Yerel değişiklikler:")
+        print(status)
+    else:
+        print("Çalışma alanı temiz.")
+
+    print()
+
+    # 4
+    print("[2/3] Git senkronizasyonu...\n")
+
+    sync_git(status)
+
+    # 5
+    print("[3/3] Python bağımlılıkları...\n")
+
+    install_requirements()
+
+    print("\n" + "=" * 60)
+    print("       DEVELOPMENT ENVIRONMENT READY")
     print("=" * 60)
 
 
