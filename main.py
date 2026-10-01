@@ -18,7 +18,9 @@ from cells import (
 )
 from recognizer import (
     recognize_grid,
-    create_matched_rebuilt,
+    prompt_for_known_filled_cells,
+    create_rebuilt_with_recognition,
+    create_recognition_result,
 )
 
 SUPPORTED_EXTENSIONS = {
@@ -1222,74 +1224,6 @@ class SudokuViewer:
                 label
             )
 
-        self.normalized_panel = tk.Frame(
-            self.root,
-            bg="#111111",
-        )
-
-        self.normalized_panel.pack(
-            fill="x",
-            padx=20,
-            pady=(0, 10),
-        )
-
-        self.normalized_title = tk.Label(
-            self.normalized_panel,
-            text="Normalized digits",
-            font=(
-                "Arial",
-                11,
-                "bold",
-            ),
-            fg="white",
-            bg="#111111",
-        )
-
-        self.normalized_title.pack(
-            anchor="w",
-            pady=(0, 5),
-        )
-
-        self.normalized_grid = tk.Frame(
-            self.normalized_panel,
-            bg="#111111",
-        )
-
-        self.normalized_grid.pack(
-            fill="x",
-        )
-
-        self.normalized_cells = []
-
-        for row in range(9):
-            row_cells = []
-
-            for col in range(9):
-                cell = tk.Label(
-                    self.normalized_grid,
-                    width=4,
-                    height=2,
-                    bg="#1f1f1f",
-                    relief="solid",
-                    borderwidth=1,
-                )
-
-                cell.grid(
-                    row=row,
-                    column=col,
-                    padx=1,
-                    pady=1,
-                    sticky="nsew",
-                )
-
-                row_cells.append(
-                    cell
-                )
-
-            self.normalized_cells.append(
-                row_cells
-            )
-
         self.button_frame = tk.Frame(
             self.root,
             bg="#111111",
@@ -1419,39 +1353,6 @@ class SudokuViewer:
             pil_image
         )
 
-    def render_normalized_digits(self, result):
-        digits = result.get(
-            "normalized_digits",
-            [],
-        )
-
-        for row in range(9):
-            for col in range(9):
-                cell = self.normalized_cells[row][col]
-                digit = digits[row][col] if row < len(digits) and col < len(digits[row]) else None
-
-                if digit is None:
-                    cell.config(
-                        image="",
-                        text="",
-                        bg="#1f1f1f",
-                    )
-                    continue
-
-                tk_image = self.cv_to_tk(
-                    digit,
-                    max_width=24,
-                    max_height=24,
-                )
-
-                cell.config(
-                    image=tk_image,
-                    text="",
-                    bg="#111111",
-                    compound="center",
-                )
-                cell.image = tk_image
-
     def show_current(self):
 
         result = self.results[
@@ -1462,7 +1363,7 @@ class SudokuViewer:
             ("Original", result["original"]),
             ("Warp 1", result["warped"]),
             ("Grid Debug", result["grid_debug"]),
-            ("Matched Rebuilt", result["matched_rebuilt"]),
+            ("Recognition Result", result["recognition_result"]),
             ("Rebuilt", result["rebuilt"]),
         ]
 
@@ -1470,7 +1371,7 @@ class SudokuViewer:
             "Original",
             "Warp 1",
             "Grid Debug",
-            "Matched Rebuilt",
+            "Recognition Result",
             "Rebuilt",
         ]
 
@@ -1507,10 +1408,6 @@ class SudokuViewer:
             self.image_labels[i].image = (
                 tk_image
             )
-
-        self.render_normalized_digits(
-            result
-        )
 
         self.previous_button.config(
             state=(
@@ -1694,8 +1591,13 @@ def process_image(
     # RECOGNITION
     # ========================================================
 
-    recognition, normalized_digits = recognize_grid(
+    recognition, normalized_digits, occupied = recognize_grid(
         cell_images
+    )
+
+    recognition = prompt_for_known_filled_cells(
+        occupied,
+        recognition,
     )
 
     print(
@@ -1712,12 +1614,19 @@ def process_image(
         )
 
     # ========================================================
-    # MATCHED REBUILT
+    # RECOGNITION RESULT
     # ========================================================
 
-    matched_rebuilt = create_matched_rebuilt(
+    rebuilt_with_recognition = create_rebuilt_with_recognition(
         rebuilt,
         recognition,
+        occupied,
+    )
+
+    recognition_result = create_recognition_result(
+        rebuilt,
+        recognition,
+        occupied,
     )
 
     return {
@@ -1725,11 +1634,12 @@ def process_image(
         "original": image,
         "warped": warped,
         "grid_debug": grid_debug,
-        "matched_rebuilt": matched_rebuilt,
-        "rebuilt": rebuilt,
+        "recognition_result": recognition_result,
+        "rebuilt": rebuilt_with_recognition,
 
         "cell_images": cell_images,
         "recognition": recognition,
+        "occupied": occupied,
         "normalized_digits": normalized_digits,
     }
 

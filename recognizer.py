@@ -1,3 +1,4 @@
+import sys
 import cv2
 import numpy as np
 
@@ -294,30 +295,34 @@ def classify_normalized_digit(digit):
 def recognize_grid(cell_images):
     """
     Her hücreyi boş / rakam olarak değerlendirir.
-    Emin olduğumuz rakamları 1..9 olarak döndürür.
-    Güvenli değilsek 0 (boş) döner.
+    Güvenli rakamlar 1..9, emin değilsek 0 döner.
 
     Returns:
         recognition
         normalized_digits
+        occupied
     """
 
     recognition = []
     normalized_digits = []
+    occupied = []
 
     for row in range(9):
         recognition_row = []
         normalized_row = []
+        occupied_row = []
 
         for col in range(9):
             cell = cell_images[row][col]
-
             result = analyze_cell(cell)
 
             if result["empty"]:
                 recognition_row.append(0)
                 normalized_row.append(None)
+                occupied_row.append(0)
                 continue
+
+            occupied_row.append(1)
 
             normalized = normalize_digit(
                 result["digit"]
@@ -342,23 +347,77 @@ def recognize_grid(cell_images):
             normalized_row
         )
 
+        occupied.append(
+            occupied_row
+        )
+
     return (
         recognition,
         normalized_digits,
+        occupied,
     )
 
 
+def prompt_for_known_filled_cells(occupied, recognition):
+    """
+    Dolu olduğu bilinen ama tanıyamadığı hücreler için kullanıcıdan değer ister.
+    Bu, yanlış OCR yerine kullanıcı katılımını tercih etmek için tasarlandı.
+    """
+
+    pending = []
+
+    for row in range(9):
+        for col in range(9):
+            if occupied[row][col] == 1 and recognition[row][col] == 0:
+                pending.append((row, col))
+
+    if not pending:
+        return recognition
+
+    if not sys.stdin.isatty():
+        print("\nNon-interactive input detected; skipping manual value prompts.")
+        return recognition
+
+    print("\nKnown non-empty cells without a confident digit:")
+
+    for row, col in pending:
+        while True:
+            try:
+                answer = input(
+                    f"  Cell [{row},{col}] value (1-9, or 0 to skip): "
+                ).strip()
+            except EOFError:
+                print("\n  Input closed; skipping remaining prompts.")
+                return recognition
+
+            if answer == "":
+                continue
+
+            try:
+                value = int(answer)
+            except ValueError:
+                print("  Please enter a number from 0 to 9.")
+                continue
+
+            if value == 0:
+                break
+
+            if 1 <= value <= 9:
+                recognition[row][col] = value
+                break
+
+            print("  Value must be between 1 and 9.")
+
+    return recognition
+
+
 # ============================================================
-# CREATE MATCHED REBUILT
+# CREATE RECOGNITION RESULT
 # ============================================================
 
-def create_matched_rebuilt(
-    rebuilt,
-    recognition,
-):
+def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
     """
-    Rebuilt Sudoku üzerinde tanınan rakamları
-    yarı saydam yeşil ile işaretler.
+    Rebuilt board üzerinde tanınan değerler maviyle işaretlenir.
     """
 
     result = cv2.cvtColor(
@@ -367,7 +426,6 @@ def create_matched_rebuilt(
     )
 
     h, w = rebuilt.shape
-
     cell_width = w / 9.0
     cell_height = h / 9.0
 
@@ -375,35 +433,91 @@ def create_matched_rebuilt(
 
     for row in range(9):
         for col in range(9):
-
-            value = recognition[row][col]
-
-            if value == 0 or value is None:
+            if recognition[row][col] == 0:
                 continue
 
-            x1 = round(
-                col * cell_width
-            )
-
-            x2 = round(
-                (col + 1) * cell_width
-            )
-
-            y1 = round(
-                row * cell_height
-            )
-
-            y2 = round(
-                (row + 1) * cell_height
-            )
+            x1 = round(col * cell_width)
+            x2 = round((col + 1) * cell_width)
+            y1 = round(row * cell_height)
+            y2 = round((row + 1) * cell_height)
 
             cv2.rectangle(
                 overlay,
                 (x1, y1),
                 (x2, y2),
-                (0, 220, 0),
+                (255, 120, 60),
                 -1,
             )
+
+    result = cv2.addWeighted(
+        overlay,
+        0.24,
+        result,
+        0.76,
+        0,
+    )
+
+    return result
+
+
+def create_recognition_result(rebuilt, recognition, occupied):
+    """
+    Düz rebuilt tabanında iki katmanlı sonuç paneli üretir:
+      - tanınan değerler: mavi
+      - dolu ama tanınamayanlar: sarı
+      - yanlış/karışık çıkanlar: kırmızı
+      - boş hücreler: boş
+    """
+
+    result = cv2.cvtColor(
+        rebuilt,
+        cv2.COLOR_GRAY2BGR,
+    )
+
+    h, w = rebuilt.shape
+    cell_width = w / 9.0
+    cell_height = h / 9.0
+
+    overlay = result.copy()
+
+    for row in range(9):
+        for col in range(9):
+            x1 = round(col * cell_width)
+            x2 = round((col + 1) * cell_width)
+            y1 = round(row * cell_height)
+            y2 = round((row + 1) * cell_height)
+
+            value = recognition[row][col]
+            is_occupied = occupied[row][col] == 1
+
+            if is_occupied and value == 0:
+                cv2.rectangle(
+                    overlay,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 220, 220),
+                    -1,
+                )
+                continue
+
+            if not is_occupied and value != 0:
+                cv2.rectangle(
+                    overlay,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 0, 220),
+                    -1,
+                )
+                continue
+
+            if is_occupied and value != 0:
+                cv2.rectangle(
+                    overlay,
+                    (x1, y1),
+                    (x2, y2),
+                    (255, 120, 60),
+                    -1,
+                )
 
     result = cv2.addWeighted(
         overlay,
@@ -412,5 +526,39 @@ def create_matched_rebuilt(
         0.72,
         0,
     )
+
+    for row in range(9):
+        for col in range(9):
+            value = recognition[row][col]
+            if value == 0:
+                continue
+
+            x1 = round(col * cell_width)
+            x2 = round((col + 1) * cell_width)
+            y1 = round(row * cell_height)
+            y2 = round((row + 1) * cell_height)
+
+            cx = int((x1 + x2) / 2.0)
+            cy = int((y1 + y2) / 2.0)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = 0.8
+            thickness = 2
+            color = (255, 255, 255)
+
+            if occupied[row][col] == 1:
+                color = (255, 255, 255)
+            else:
+                color = (255, 255, 255)
+
+            cv2.putText(
+                result,
+                str(value),
+                (cx - 10, cy + 12),
+                font,
+                scale,
+                color,
+                thickness,
+                cv2.LINE_AA,
+            )
 
     return result
