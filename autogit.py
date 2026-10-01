@@ -4,8 +4,22 @@ from datetime import datetime
 import platform
 
 
-system = platform.system()
+MACHINE_FILE = ".machine_name"
 INTERVAL = 300  # 5 dakika
+
+
+def get_machine_name():
+    try:
+        with open(MACHINE_FILE, "r", encoding="utf-8") as file:
+            name = file.read().strip()
+
+        if name:
+            return name
+
+    except FileNotFoundError:
+        pass
+
+    return platform.system().lower()
 
 
 def run_git(*args):
@@ -59,6 +73,8 @@ def get_sync_status():
 
 
 def sync_once():
+    machine_name = get_machine_name()
+
     print("\n" + "=" * 60)
     print(
         f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
@@ -94,11 +110,9 @@ def sync_once():
     # ---------------------------------------------------------
 
     if behind > 0:
-
         print("\n⚠ GitHub'da daha yeni commit var.")
         print("Autogit otomatik push yapmayacak.")
         print("Önce 'python dev.py' ile senkronize ol.")
-
         return
 
     # ---------------------------------------------------------
@@ -137,7 +151,7 @@ def sync_once():
     commit = run_git(
         "commit",
         "-m",
-        f"auto [{system}]: {timestamp}"
+        f"auto [{machine_name}]: {timestamp}"
     )
 
     if commit.returncode != 0:
@@ -164,7 +178,6 @@ def main():
     print("=" * 60)
     print("           SUDOKU SOLVER - AUTOGIT")
     print("=" * 60)
-
     print(f"\nOtomatik kontrol aralığı: {INTERVAL // 60} dakika")
     print("Çıkmak için CTRL+C\n")
 
@@ -186,7 +199,6 @@ def main():
         except Exception as e:
             print(f"\n❌ Beklenmeyen hata: {e}")
             print("Program çalışmaya devam edecek.")
-
             time.sleep(INTERVAL)
 
 

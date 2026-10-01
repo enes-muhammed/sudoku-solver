@@ -8,3 +8,4 @@ venv/
 .vscode/
 
 .env
+.machine_name

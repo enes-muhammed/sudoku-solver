@@ -4,6 +4,9 @@ import subprocess
 import sys
 
 
+MACHINE_FILE = ".machine_name"
+
+
 def run_command(command):
     result = subprocess.run(
         command,
@@ -24,13 +27,44 @@ def run_git(*args):
     return run_command(["git", *args])
 
 
-def detect_environment():
+def get_machine_name():
+    try:
+        with open(MACHINE_FILE, "r", encoding="utf-8") as file:
+            name = file.read().strip()
+
+        if name:
+            return name
+
+    except FileNotFoundError:
+        pass
+
+    print("[MACHINE] Bu bilgisayar için bir isim bulunamadı.")
+    print("Örnek: home-pc, school-pc, laptop")
+    
+    while True:
+        name = input("Makine adı: ").strip()
+
+        if name:
+            break
+
+        print("Makine adı boş bırakılamaz.")
+
+    with open(MACHINE_FILE, "w", encoding="utf-8") as file:
+        file.write(name)
+
+    print(f"✓ Makine adı kaydedildi: {name}\n")
+
+    return name
+
+
+def detect_environment(machine_name):
     system = platform.system()
 
     print("[ENVIRONMENT]")
     print(f"Operating system : {system}")
     print(f"Platform         : {platform.platform()}")
     print(f"Python           : {platform.python_version()}")
+    print(f"Machine          : {machine_name}")
 
     if system == "Windows":
         print("Environment      : Windows")
@@ -147,22 +181,31 @@ def install_requirements():
     print("[PYTHON] Bağımlılıklar kontrol ediliyor...\n")
 
     try:
-        with open("requirements.txt", "r", encoding="utf-8") as file:
+        with open(
+            "requirements.txt",
+            "r",
+            encoding="utf-8"
+        ) as file:
+
             requirements = [
                 line.strip()
                 for line in file
                 if line.strip() and not line.startswith("#")
             ]
+
     except FileNotFoundError:
+
         print("requirements.txt bulunamadı.")
         print("Bağımlılık kurulumu atlandı.")
         return
 
     if not requirements:
+
         print("requirements.txt boş.")
         return
 
     print("Gerekli paketler:")
+
     for package in requirements:
         print(f"  - {package}")
 
@@ -187,18 +230,22 @@ def install_requirements():
 
 
 def main():
+
     print("=" * 60)
     print("       SUDOKU SOLVER - DEVELOPMENT START")
     print("=" * 60)
     print()
 
     # 1
-    detect_environment()
+    machine_name = get_machine_name()
 
     # 2
-    check_git()
+    detect_environment(machine_name)
 
     # 3
+    check_git()
+
+    # 4
     print("[1/3] Git çalışma durumu kontrol ediliyor...\n")
 
     status = get_git_status()
@@ -206,17 +253,18 @@ def main():
     if status:
         print("Yerel değişiklikler:")
         print(status)
+
     else:
         print("Çalışma alanı temiz.")
 
     print()
 
-    # 4
+    # 5
     print("[2/3] Git senkronizasyonu...\n")
 
     sync_git(status)
 
-    # 5
+    # 6
     print("[3/3] Python bağımlılıkları...\n")
 
     install_requirements()
