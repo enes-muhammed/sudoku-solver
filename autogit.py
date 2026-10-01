@@ -1,8 +1,10 @@
 import subprocess
 import time
 from datetime import datetime
+import platform
 
 
+system = platform.system()
 INTERVAL = 300  # 5 dakika
 
 
@@ -135,7 +137,7 @@ def sync_once():
     commit = run_git(
         "commit",
         "-m",
-        f"auto: {timestamp}"
+        f"auto [{system}]: {timestamp}"
     )
 
     if commit.returncode != 0:
