@@ -217,27 +217,25 @@ def install_requirements():
         "pip",
         "install",
     ]
-
-    # Arch Linux, sistem Python'ını PEP 668 ile korur.
-    # Windows'ta bu parametreye gerek yoktur.
+    
     if platform.system() == "Linux":
         pip_command.append("--break-system-packages")
-
+    
     pip_command.extend([
         "-r",
         "requirements.txt"
     ])
-
+    
     print("Komut:")
-    print(" ".join(pip_command))
+    print(" ".join(pip_command), flush=True)
     print()
-
+    
     result = subprocess.run(pip_command)
-
+    
     if result.returncode != 0:
         print("\n❌ Paket kurulumu başarısız.")
         sys.exit(1)
-
+    
     print("\n✓ Python bağımlılıkları hazır.")
 
 
