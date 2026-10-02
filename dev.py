@@ -40,7 +40,7 @@ def get_machine_name():
 
     print("[MACHINE] Bu bilgisayar için bir isim bulunamadı.")
     print("Örnek: home-pc, school-pc, laptop")
-    
+
     while True:
         name = input("Makine adı: ").strip()
 
@@ -211,16 +211,28 @@ def install_requirements():
 
     print("\nPip çalıştırılıyor...\n")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-r",
-            "requirements.txt"
-        ]
-    )
+    pip_command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+    ]
+
+    # Arch Linux, sistem Python'ını PEP 668 ile korur.
+    # Windows'ta bu parametreye gerek yoktur.
+    if platform.system() == "Linux" and shutil.which("pacman"):
+        pip_command.append("--break-system-packages")
+
+    pip_command.extend([
+        "-r",
+        "requirements.txt"
+    ])
+
+    print("Komut:")
+    print(" ".join(pip_command))
+    print()
+
+    result = subprocess.run(pip_command)
 
     if result.returncode != 0:
         print("\n❌ Paket kurulumu başarısız.")
