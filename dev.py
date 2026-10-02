@@ -220,7 +220,7 @@ def install_requirements():
 
     # Arch Linux, sistem Python'ını PEP 668 ile korur.
     # Windows'ta bu parametreye gerek yoktur.
-    if platform.system() == "Linux" and shutil.which("pacman"):
+    if platform.system() == "Linux":
         pip_command.append("--break-system-packages")
 
     pip_command.extend([
