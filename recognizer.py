@@ -1,4 +1,3 @@
-import sys
 import cv2
 import numpy as np
 
@@ -9,7 +8,22 @@ import numpy as np
 
 NORMALIZED_SIZE = 64
 
-DIGIT_PADDING = 8
+DIGIT_PADDING = 6
+
+MIN_CONFIDENCE = 0.55
+
+FONT_CONFIGS = [
+    cv2.FONT_HERSHEY_SIMPLEX,
+    cv2.FONT_HERSHEY_DUPLEX,
+    cv2.FONT_HERSHEY_COMPLEX,
+    cv2.FONT_HERSHEY_TRIPLEX,
+    cv2.FONT_HERSHEY_COMPLEX_SMALL,
+    cv2.FONT_HERSHEY_PLAIN,
+]
+
+TEMPLATE_SCALES = (1.2, 1.6, 2.0, 2.4)
+
+TEMPLATE_THICKNESSES = (1, 2, 3)
 
 
 # ============================================================
@@ -92,93 +106,95 @@ def analyze_cell(cell):
 
 
 # ============================================================
-# NORMALIZE DIGIT
+# NORMALIZE DIGIT (bbox based)
 # ============================================================
 
-def normalize_digit(digit):
+def _bbox_normalize(gray):
     """
-    Rakam görüntüsünü 64x64 standart görüntüye dönüştürür.
-
-    Rakamın oranı korunur.
+    Rakamın bounding kutusunu kırpar, en-boy oranını
+    koruyarak 64x64'lük tuvalin ortasına yerleştirir.
     """
 
-    if digit is None or digit.size == 0:
+    if gray is None or gray.size == 0:
         return np.full(
-            (
-                NORMALIZED_SIZE,
-                NORMALIZED_SIZE,
-            ),
+            (NORMALIZED_SIZE, NORMALIZED_SIZE),
             255,
             dtype=np.uint8,
         )
 
-    h, w = digit.shape
+    binary = np.where(
+        gray < 160,
+        0,
+        255,
+    ).astype(np.uint8)
 
-    available_size = (
+    ys, xs = np.where(binary == 0)
+
+    if len(xs) == 0:
+        return np.full(
+            (NORMALIZED_SIZE, NORMALIZED_SIZE),
+            255,
+            dtype=np.uint8,
+        )
+
+    x1, x2 = xs.min(), xs.max() + 1
+    y1, y2 = ys.min(), ys.max() + 1
+
+    crop = binary[y1:y2, x1:x2]
+
+    h, w = crop.shape
+
+    available = (
         NORMALIZED_SIZE
         - DIGIT_PADDING * 2
     )
 
     scale = min(
-        available_size / max(w, 1),
-        available_size / max(h, 1),
+        available / max(w, 1),
+        available / max(h, 1),
     )
 
-    new_width = max(
-        1,
-        round(w * scale),
-    )
-
-    new_height = max(
-        1,
-        round(h * scale),
-    )
+    new_width = max(1, round(w * scale))
+    new_height = max(1, round(h * scale))
 
     resized = cv2.resize(
-        digit,
-        (
-            new_width,
-            new_height,
-        ),
+        crop,
+        (new_width, new_height),
         interpolation=cv2.INTER_AREA,
     )
 
     result = np.full(
-        (
-            NORMALIZED_SIZE,
-            NORMALIZED_SIZE,
-        ),
+        (NORMALIZED_SIZE, NORMALIZED_SIZE),
         255,
         dtype=np.uint8,
     )
 
-    x = (
-        NORMALIZED_SIZE
-        - new_width
-    ) // 2
+    y = (NORMALIZED_SIZE - new_height) // 2
+    x = (NORMALIZED_SIZE - new_width) // 2
 
-    y = (
-        NORMALIZED_SIZE
-        - new_height
-    ) // 2
-
-    result[
-        y:y + new_height,
-        x:x + new_width,
-    ] = resized
+    result[y:y + new_height, x:x + new_width] = resized
 
     return result
 
 
+def normalize_digit(digit):
+    """Rakam görüntüsünü 64x64 standart görüntüye dönüştürür."""
+
+    return _bbox_normalize(digit)
+
+
 # ============================================================
-# RECOGNIZE GRID
+# TEMPLATE BANK
 # ============================================================
 
 def build_digit_template_bank():
     """
-    Çok küçük bir template bankası oluşturur.
-    Amaç, çok kolay ve güvenli bir ilk tanıma katmanı kurmaktır.
-    Emin değilsek 0 döndürürüz.
+    Birden fazla Hershey fontu, farklı ölçek ve
+    kalınlıklar içeren zengin bir template bankası kurar.
+
+    Her şablon, hücre normalize edilirken kullanılan
+    aynı bbox-temelli normalize ile hizalanır.
+    Eşleşmezse "emin değilim" denir ve 0 (boş) döneriz.
     """
 
     bank = {}
@@ -186,31 +202,29 @@ def build_digit_template_bank():
     for value in range(10):
         variants = []
 
-        for scale, thickness in (
-            (2.2, 2),
-            (2.4, 1),
-            (2.0, 3),
-        ):
-            canvas = np.full(
-                (64, 64),
-                255,
-                dtype=np.uint8,
-            )
+        for font in FONT_CONFIGS:
+            for scale in TEMPLATE_SCALES:
+                for thickness in TEMPLATE_THICKNESSES:
+                    canvas = np.full(
+                        (96, 96),
+                        255,
+                        dtype=np.uint8,
+                    )
 
-            cv2.putText(
-                canvas,
-                str(value),
-                (8, 48),
-                cv2.FONT_HERSHEY_COMPLEX,
-                scale,
-                0,
-                thickness,
-                cv2.LINE_AA,
-            )
+                    cv2.putText(
+                        canvas,
+                        str(value),
+                        (8, 80),
+                        font,
+                        scale,
+                        0,
+                        thickness,
+                        cv2.LINE_AA,
+                    )
 
-            variants.append(
-                canvas
-            )
+                    variants.append(
+                        _bbox_normalize(canvas)
+                    )
 
         bank[value] = variants
 
@@ -220,26 +234,33 @@ def build_digit_template_bank():
 TEMPLATE_BANK = build_digit_template_bank()
 
 
+# ============================================================
+# CLASSIFY
+# ============================================================
+
 def classify_normalized_digit(digit):
     """
-    Normalize edilmiş 64x64 rakam görüntüsünü güvenli şekilde 0..9'a çevirir.
+    Normalize edilmiş 64x64 rakam görüntüsünü sınıflandırır.
 
-    Ana koşul: yüksek güven varsa sınıflandır.
-    Kesin değilse 0 döndürür (boş / yoksay).
+    Returns:
+        (digit_value, confidence)
     """
 
     if digit is None or digit.size == 0:
-        return 0
+        return 0, 0.0
 
     image = np.asarray(
         digit,
         dtype=np.uint8,
     )
 
-    if image.shape != (64, 64):
+    if image.shape != (
+        NORMALIZED_SIZE,
+        NORMALIZED_SIZE,
+    ):
         image = cv2.resize(
             image,
-            (64, 64),
+            (NORMALIZED_SIZE, NORMALIZED_SIZE),
             interpolation=cv2.INTER_AREA,
         )
 
@@ -250,13 +271,11 @@ def classify_normalized_digit(digit):
     ).astype(np.uint8)
 
     dark_ratio = float(
-        np.mean(
-            binary == 0
-        )
+        np.mean(binary == 0)
     )
 
     if dark_ratio < 0.02:
-        return 0
+        return 0, 0.0
 
     best_digit = 0
     best_score = -1.0
@@ -281,36 +300,37 @@ def classify_normalized_digit(digit):
             elif score > second_score:
                 second_score = score
 
-    # Yalnızca net ve ayrışmış eşleşmeler kabul edilir.
-    # Emin değilsek boş bırakılır.
-    if best_score < 0.40:
-        return 0
+    if best_score < MIN_CONFIDENCE:
+        return 0, best_score
 
-    if second_score >= 0 and (best_score - second_score) < 0.02:
-        return 0
+    return int(best_digit), best_score
 
-    return int(best_digit)
 
+# ============================================================
+# RECOGNIZE GRID
+# ============================================================
 
 def recognize_grid(cell_images):
     """
     Her hücreyi boş / rakam olarak değerlendirir.
-    Güvenli rakamlar 1..9, emin değilsek 0 döner.
 
     Returns:
-        recognition
-        normalized_digits
-        occupied
+        recognition        9x9 int (0 = boş/emin değil)
+        normalized_digits  9x9 np.ndarray | None
+        occupied           9x9 int (1 = hücrede bir şey var)
+        confidences        9x9 float
     """
 
     recognition = []
     normalized_digits = []
     occupied = []
+    confidences = []
 
     for row in range(9):
         recognition_row = []
         normalized_row = []
         occupied_row = []
+        confidence_row = []
 
         for col in range(9):
             cell = cell_images[row][col]
@@ -320,6 +340,7 @@ def recognize_grid(cell_images):
                 recognition_row.append(0)
                 normalized_row.append(None)
                 occupied_row.append(0)
+                confidence_row.append(0.0)
                 continue
 
             occupied_row.append(1)
@@ -328,8 +349,10 @@ def recognize_grid(cell_images):
                 result["digit"]
             )
 
-            predicted = classify_normalized_digit(
-                normalized
+            predicted, confidence = (
+                classify_normalized_digit(
+                    normalized
+                )
             )
 
             recognition_row.append(
@@ -338,95 +361,46 @@ def recognize_grid(cell_images):
             normalized_row.append(
                 normalized
             )
+            confidence_row.append(
+                float(confidence)
+            )
 
-        recognition.append(
-            recognition_row
-        )
-
-        normalized_digits.append(
-            normalized_row
-        )
-
-        occupied.append(
-            occupied_row
-        )
+        recognition.append(recognition_row)
+        normalized_digits.append(normalized_row)
+        occupied.append(occupied_row)
+        confidences.append(confidence_row)
 
     return (
         recognition,
         normalized_digits,
         occupied,
+        confidences,
     )
 
 
-def prompt_for_known_filled_cells(occupied, recognition):
-    """
-    Dolu olduğu bilinen ama tanıyamadığı hücreler için kullanıcıdan değer ister.
-    Bu, yanlış OCR yerine kullanıcı katılımını tercih etmek için tasarlandı.
-    """
-
-    pending = []
-
-    for row in range(9):
-        for col in range(9):
-            if occupied[row][col] == 1 and recognition[row][col] == 0:
-                pending.append((row, col))
-
-    if not pending:
-        return recognition
-
-    if not sys.stdin.isatty():
-        print("\nNon-interactive input detected; skipping manual value prompts.")
-        return recognition
-
-    print("\nKnown non-empty cells without a confident digit:")
-
-    for row, col in pending:
-        while True:
-            try:
-                answer = input(
-                    f"  Cell [{row},{col}] value (1-9, or 0 to skip): "
-                ).strip()
-            except EOFError:
-                print("\n  Input closed; skipping remaining prompts.")
-                return recognition
-
-            if answer == "":
-                continue
-
-            try:
-                value = int(answer)
-            except ValueError:
-                print("  Please enter a number from 0 to 9.")
-                continue
-
-            if value == 0:
-                break
-
-            if 1 <= value <= 9:
-                recognition[row][col] = value
-                break
-
-            print("  Value must be between 1 and 9.")
-
-    return recognition
-
-
 # ============================================================
-# CREATE RECOGNITION RESULT
+# OVERLAYS
 # ============================================================
 
-def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
+def create_recognition_overlay(
+    warped,
+    recognition,
+    occupied,
+    confidences,
+    manual_values=None,
+):
     """
-    Rebuilt board'un sağ sütununda tanınan hücrelere yarı saydam mavi perde gelir.
-    Rakam metni siyah kalır; renk sadece arka plan dokuya uygulanır.
+    Warped görüntü üzerine yarı saydam güven renkleri basar.
+
+      - yüksek güven   -> yeşil
+      - düşük güven    -> kırmızı
+      - dolu ama okunamayan -> turuncu (sayı yok)
+      - manuel giriş   -> mavi
     """
 
-    result = cv2.cvtColor(
-        rebuilt,
-        cv2.COLOR_GRAY2BGR,
-    )
+    result = warped.copy()
 
-    h, w = rebuilt.shape
+    h, w = warped.shape[:2]
     cell_width = w / 9.0
     cell_height = h / 9.0
 
@@ -434,118 +408,62 @@ def create_rebuilt_with_recognition(rebuilt, recognition, occupied):
 
     for row in range(9):
         for col in range(9):
-            if recognition[row][col] == 0:
-                continue
-
             x1 = round(col * cell_width)
             x2 = round((col + 1) * cell_width)
             y1 = round(row * cell_height)
             y2 = round((row + 1) * cell_height)
+
+            manual = (
+                manual_values[row][col]
+                if manual_values is not None
+                else 0
+            )
+
+            value = recognition[row][col]
+            is_occupied = occupied[row][col] == 1
+            confidence = confidences[row][col]
+
+            if manual != 0:
+                color = (230, 130, 0)
+            elif value != 0 and confidence >= MIN_CONFIDENCE:
+                color = (60, 200, 90)
+            elif value != 0:
+                color = (60, 60, 220)
+            elif is_occupied:
+                color = (40, 165, 245)
+            else:
+                continue
 
             cv2.rectangle(
                 overlay,
                 (x1, y1),
                 (x2, y2),
-                (255, 0, 0),
+                color,
                 -1,
             )
 
     result = cv2.addWeighted(
         overlay,
-        0.30,
+        0.28,
         result,
-        0.70,
-        0,
-    )
-
-    return result
-
-
-def create_recognition_result(rebuilt, recognition, occupied, known_values):
-    """
-    Son sonuç paneli:
-      - eşleşen tahminler: yeşil
-      - yanlış tahminler: kırmızı
-      - dolu ama tanınamayan: sarı
-      - rakam bilinen / guess: mavi
-    Metin siyah kalır; renk sadece hücre arka planına uygulanır.
-    """
-
-    result = cv2.cvtColor(
-        rebuilt,
-        cv2.COLOR_GRAY2BGR,
-    )
-
-    h, w = rebuilt.shape
-    cell_width = w / 9.0
-    cell_height = h / 9.0
-
-    overlay = result.copy()
-
-    for row in range(9):
-        for col in range(9):
-            x1 = round(col * cell_width)
-            x2 = round((col + 1) * cell_width)
-            y1 = round(row * cell_height)
-            y2 = round((row + 1) * cell_height)
-
-            value = recognition[row][col]
-            known = known_values[row][col]
-            is_occupied = occupied[row][col] == 1
-
-            if known != 0:
-                if value == known:
-                    cv2.rectangle(
-                        overlay,
-                        (x1, y1),
-                        (x2, y2),
-                        (0, 255, 0),
-                        -1,
-                    )
-                elif value == 0:
-                    cv2.rectangle(
-                        overlay,
-                        (x1, y1),
-                        (x2, y2),
-                        (0, 255, 255),
-                        -1,
-                    )
-                else:
-                    cv2.rectangle(
-                        overlay,
-                        (x1, y1),
-                        (x2, y2),
-                        (0, 0, 255),
-                        -1,
-                    )
-            elif value != 0 and is_occupied:
-                cv2.rectangle(
-                    overlay,
-                    (x1, y1),
-                    (x2, y2),
-                    (255, 0, 0),
-                    -1,
-                )
-            elif value != 0:
-                cv2.rectangle(
-                    overlay,
-                    (x1, y1),
-                    (x2, y2),
-                    (255, 0, 0),
-                    -1,
-                )
-
-    result = cv2.addWeighted(
-        overlay,
-        0.32,
-        result,
-        0.68,
+        0.72,
         0,
     )
 
     for row in range(9):
         for col in range(9):
-            value = recognition[row][col]
+            manual = (
+                manual_values[row][col]
+                if manual_values is not None
+                else 0
+            )
+
+            value = (
+                manual
+                if manual != 0
+                else recognition[row][col]
+            )
+
             if value == 0:
                 continue
 
@@ -560,11 +478,11 @@ def create_recognition_result(rebuilt, recognition, occupied, known_values):
             cv2.putText(
                 result,
                 str(value),
-                (cx - 11, cy + 12),
+                (cx - 16, cy + 16),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.78,
-                (0, 0, 0),
-                2,
+                1.4,
+                (20, 20, 20),
+                3,
                 cv2.LINE_AA,
             )
 

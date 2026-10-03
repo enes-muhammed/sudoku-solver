@@ -1,9 +1,6 @@
 from pathlib import Path
 import cv2
 import numpy as np
-import tkinter as tk
-from tkinter import simpledialog
-from PIL import Image, ImageTk
 from board import (
     OUTPUT_SIZE,
     find_sudoku_contour,
@@ -17,11 +14,10 @@ from cells import (
     extract_cell_images,
     add_rebuilt_grid,
 )
+from gui import run_viewer
 from recognizer import (
     recognize_grid,
-    prompt_for_known_filled_cells,
-    create_rebuilt_with_recognition,
-    create_recognition_result,
+    create_recognition_overlay,
 )
 
 SUPPORTED_EXTENSIONS = {
@@ -36,9 +32,9 @@ SUPPORTED_EXTENSIONS = {
 # RUN MODE
 # ============================================================
 
-SINGLE_MODE = True
+SINGLE_MODE = False
 
-SINGLE_FILE = "current.jpeg"
+SINGLE_FILE = "jpukpjvb9irh1.jpeg"
 
 COLLECTION_DIR = "sudoku_collection"
 
@@ -1136,409 +1132,6 @@ def find_best_sudoku_quad(
 
 
 # ============================================================
-# UI
-# ============================================================
-
-class SudokuViewer:
-
-    def __init__(
-        self,
-        results,
-    ):
-        self.results = results
-        self.index = 0
-
-        self.root = tk.Tk()
-
-        self.root.title(
-            "Sudoku Image Processor"
-        )
-
-        self.root.geometry(
-            "1500x900"
-        )
-
-        self.root.configure(
-            bg="#111111"
-        )
-
-        self.title_label = tk.Label(
-            self.root,
-            text="",
-            font=(
-                "Arial",
-                18,
-                "bold",
-            ),
-            fg="white",
-            bg="#111111",
-        )
-
-        self.title_label.pack(
-            pady=(15, 5)
-        )
-
-        self.counter_label = tk.Label(
-            self.root,
-            text="",
-            font=(
-                "Arial",
-                11,
-            ),
-            fg="#bbbbbb",
-            bg="#111111",
-        )
-
-        self.counter_label.pack(
-            pady=(0, 10)
-        )
-
-        self.image_frame = tk.Frame(
-            self.root,
-            bg="#111111",
-        )
-
-        self.image_frame.pack(
-            fill="both",
-            expand=True,
-            padx=20,
-            pady=10,
-        )
-
-        self.image_labels = []
-
-        for _ in range(3):
-
-            label = tk.Label(
-                self.image_frame,
-                bg="#222222",
-            )
-
-            label.pack(
-                side="left",
-                fill="both",
-                expand=True,
-                padx=5,
-            )
-
-            self.image_labels.append(
-                label
-            )
-
-        self.right_column = tk.Frame(
-            self.image_frame,
-            bg="#111111",
-        )
-
-        self.right_column.pack(
-            side="left",
-            fill="both",
-            expand=True,
-            padx=5,
-        )
-
-        self.rebuilt_panel = tk.Frame(
-            self.right_column,
-            bg="#222222",
-        )
-
-        self.rebuilt_panel.pack(
-            fill="both",
-            expand=True,
-        )
-
-        self.rebuilt_label = tk.Label(
-            self.rebuilt_panel,
-            bg="#222222",
-            fg="white",
-            font=(
-                "Arial",
-                10,
-                "bold",
-            ),
-            compound="bottom",
-        )
-
-        self.rebuilt_label.pack(
-            fill="both",
-            expand=True,
-        )
-
-        self.recognition_panel = tk.Frame(
-            self.right_column,
-            bg="#222222",
-        )
-
-        self.recognition_panel.pack(
-            fill="both",
-            expand=True,
-            pady=(8, 0),
-        )
-
-        self.recognition_label = tk.Label(
-            self.recognition_panel,
-            bg="#222222",
-            fg="white",
-            font=(
-                "Arial",
-                10,
-                "bold",
-            ),
-            compound="bottom",
-        )
-
-        self.recognition_label.pack(
-            fill="both",
-            expand=True,
-        )
-
-        self.button_frame = tk.Frame(
-            self.root,
-            bg="#111111",
-        )
-
-        self.button_frame.pack(
-            pady=(5, 20)
-        )
-
-        self.previous_button = tk.Button(
-            self.button_frame,
-            text="← Önceki",
-            command=self.previous,
-            width=15,
-            font=(
-                "Arial",
-                11,
-            ),
-        )
-
-        self.previous_button.pack(
-            side="left",
-            padx=10,
-        )
-
-        self.next_button = tk.Button(
-            self.button_frame,
-            text="Sonraki →",
-            command=self.next,
-            width=15,
-            font=(
-                "Arial",
-                11,
-            ),
-        )
-
-        self.next_button.pack(
-            side="left",
-            padx=10,
-        )
-
-        self.root.bind(
-            "<Left>",
-            lambda event: self.previous(),
-        )
-
-        self.root.bind(
-            "<Right>",
-            lambda event: self.next(),
-        )
-
-        self.root.bind(
-            "<Escape>",
-            lambda event: self.root.destroy(),
-        )
-
-        self.show_current()
-
-    def resize_image(
-        self,
-        image,
-        max_width=280,
-        max_height=700,
-    ):
-        h, w = image.shape[:2]
-
-        scale = min(
-            max_width / w,
-            max_height / h,
-        )
-
-        scale = min(
-            scale,
-            1.0,
-        )
-
-        new_width = max(
-            1,
-            int(w * scale),
-        )
-
-        new_height = max(
-            1,
-            int(h * scale),
-        )
-
-        return cv2.resize(
-            image,
-            (
-                new_width,
-                new_height,
-            ),
-            interpolation=cv2.INTER_AREA,
-        )
-
-    def cv_to_tk(
-        self,
-        image,
-        max_width=280,
-        max_height=700,
-    ):
-        if len(image.shape) == 2:
-
-            image = cv2.cvtColor(
-                image,
-                cv2.COLOR_GRAY2RGB,
-            )
-
-        else:
-
-            image = cv2.cvtColor(
-                image,
-                cv2.COLOR_BGR2RGB,
-            )
-
-        image = self.resize_image(
-            image,
-            max_width=max_width,
-            max_height=max_height,
-        )
-
-        pil_image = Image.fromarray(
-            image
-        )
-
-        return ImageTk.PhotoImage(
-            pil_image
-        )
-
-    def show_current(self):
-
-        result = self.results[
-            self.index
-        ]
-
-        images = [
-            ("Original", result["original"]),
-            ("Warp 1", result["warped"]),
-            ("Grid Debug", result["grid_debug"]),
-        ]
-
-        for i, (name, image) in enumerate(images):
-            tk_image = self.cv_to_tk(
-                image
-            )
-
-            self.image_labels[i].config(
-                image=tk_image,
-                text=name,
-                compound="bottom",
-                fg="white",
-                font=(
-                    "Arial",
-                    10,
-                    "bold",
-                ),
-            )
-
-            self.image_labels[i].image = (
-                tk_image
-            )
-
-        rebuilt_image = self.cv_to_tk(
-            result["rebuilt"]
-        )
-
-        self.rebuilt_label.config(
-            image=rebuilt_image,
-            text="Rebuilt",
-            compound="bottom",
-            fg="white",
-            font=(
-                "Arial",
-                10,
-                "bold",
-            ),
-        )
-
-        self.rebuilt_label.image = rebuilt_image
-
-        recognition_image = self.cv_to_tk(
-            result["recognition_result"]
-        )
-
-        self.recognition_label.config(
-            image=recognition_image,
-            text="Recognition Result",
-            compound="bottom",
-            fg="white",
-            font=(
-                "Arial",
-                10,
-                "bold",
-            ),
-        )
-
-        self.recognition_label.image = recognition_image
-
-        self.title_label.config(
-            text=result["name"]
-        )
-
-        self.counter_label.config(
-            text=(
-                f"{self.index + 1}"
-                f" / "
-                f"{len(self.results)}"
-            )
-        )
-
-        self.previous_button.config(
-            state=(
-                tk.NORMAL
-                if self.index > 0
-                else tk.DISABLED
-            )
-        )
-
-        self.next_button.config(
-            state=(
-                tk.NORMAL
-                if self.index
-                < len(self.results) - 1
-                else tk.DISABLED
-            )
-        )
-
-    def previous(self):
-
-        if self.index > 0:
-            self.index -= 1
-            self.show_current()
-
-    def next(self):
-
-        if (
-            self.index
-            < len(self.results) - 1
-        ):
-            self.index += 1
-            self.show_current()
-
-    def run(self):
-        self.root.mainloop()
-
-
-# ============================================================
 # PROCESS ONE IMAGE
 # ============================================================
 
@@ -1684,47 +1277,13 @@ def process_image(
     # RECOGNITION
     # ========================================================
 
-    recognition, normalized_digits, occupied = recognize_grid(
+    recognition, normalized_digits, occupied, confidences = recognize_grid(
         cell_images
     )
 
-    known_values = [[0 for _ in range(9)] for _ in range(9)]
-
-    root = None
-    try:
-        root = tk.Tk()
-        root.withdraw()
-    except tk.TclError:
-        root = None
-
-    for row in range(9):
-        for col in range(9):
-            if occupied[row][col] == 1 and recognition[row][col] == 0:
-                if root is None:
-                    break
-
-                try:
-                    value = simpledialog.askinteger(
-                        "Known filled cell",
-                        f"Cell [{row},{col}] is filled. Enter value (1-9) or 0 to skip:",
-                        parent=root,
-                        minvalue=0,
-                        maxvalue=9,
-                    )
-                except tk.TclError:
-                    break
-
-                if value is None:
-                    value = 0
-
-                if 1 <= value <= 9:
-                    recognition[row][col] = value
-                    known_values[row][col] = value
-                else:
-                    known_values[row][col] = 0
-
-    if root is not None:
-        root.destroy()
+    manual_values = [
+        [0 for _ in range(9)] for _ in range(9)
+    ]
 
     print(
         "    Recognition grid:"
@@ -1740,35 +1299,33 @@ def process_image(
         )
 
     # ========================================================
-    # RECOGNITION RESULT
+    # OVERLAY
     # ========================================================
 
-    rebuilt_with_recognition = create_rebuilt_with_recognition(
-        rebuilt,
+    overlay = create_recognition_overlay(
+        warped,
         recognition,
         occupied,
-    )
-
-    recognition_result = create_recognition_result(
-        rebuilt,
-        recognition,
-        occupied,
-        known_values,
+        confidences,
+        manual_values,
     )
 
     return {
         "name": image_path.name,
         "original": image,
         "warped": warped,
+        "clean": clean,
         "grid_debug": grid_debug,
-        "recognition_result": recognition_result,
-        "rebuilt": rebuilt_with_recognition,
+        "overlay": overlay,
 
         "cell_images": cell_images,
         "recognition": recognition,
         "occupied": occupied,
-        "known_values": known_values,
+        "confidences": confidences,
+        "manual_values": manual_values,
         "normalized_digits": normalized_digits,
+        "vertical_lines": vertical_lines,
+        "horizontal_lines": horizontal_lines,
     }
 
 
@@ -1931,11 +1488,7 @@ def main():
     if not results:
         return
 
-    viewer = SudokuViewer(
-        results
-    )
-
-    viewer.run()
+    run_viewer(results)
 
 if __name__ == "__main__":
     main()
